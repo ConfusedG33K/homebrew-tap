@@ -1,8 +1,9 @@
-name: Update Convoy Cask
+
+name: Update Casks
 
 on:
   schedule:
-    # Check for a new release every 6 hours
+    # Check for new releases every 6 hours
     - cron: "0 */6 * * *"
   workflow_dispatch: # Allow manual triggering from the GitHub Actions tab
   repository_dispatch:
@@ -12,59 +13,85 @@ permissions:
   contents: write
 
 jobs:
-  update-cask:
+  update-casks:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check for latest release and update cask
+      - name: Check for latest releases and update casks
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
 
-          # Fetch the latest release tag from TheDynamicPunk/Convoy
-          RELEASE_JSON=$(curl -fsSL \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            "https://api.github.com/repos/TheDynamicPunk/Convoy/releases/latest")
-
-          TAG_NAME=$(echo "${RELEASE_JSON}" | jq -r '.tag_name')
-          LATEST_VERSION="${TAG_NAME#v}"
-
-          if [[ -z "${LATEST_VERSION}" || "${LATEST_VERSION}" == "null" ]]; then
-            echo "Failed to determine latest version."
-            exit 1
-          fi
-
-          CURRENT_VERSION=$(sed -n 's/.*version "\([^"]*\)".*/\1/p' Casks/convoy.rb)
-
-          echo "Current version: ${CURRENT_VERSION}"
-          echo "Latest version:  ${LATEST_VERSION}"
-
-          if [[ "${CURRENT_VERSION}" == "${LATEST_VERSION}" ]]; then
-            echo "Cask is already up to date."
-            exit 0
-          fi
-
-          # Download the DMG and compute its SHA-256 checksum
-          DMG_URL="https://github.com/TheDynamicPunk/Convoy/releases/download/v${LATEST_VERSION}/Convoy-${LATEST_VERSION}.dmg"
-          echo "Downloading ${DMG_URL}..."
-          curl -fL "${DMG_URL}" -o "/tmp/Convoy-${LATEST_VERSION}.dmg"
-          NEW_SHA256=$(sha256sum "/tmp/Convoy-${LATEST_VERSION}.dmg" | awk '{print $1}')
-          rm -f "/tmp/Convoy-${LATEST_VERSION}.dmg"
-
-          echo "Computed SHA-256: ${NEW_SHA256}"
-
-          # Update Casks/convoy.rb
-          sed -i "s/version \"${CURRENT_VERSION}\"/version \"${LATEST_VERSION}\"/" Casks/convoy.rb
-          sed -i "s/sha256 \"[a-f0-9]*\"/sha256 \"${NEW_SHA256}\"/" Casks/convoy.rb
-
-          # Commit and push
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Casks/convoy.rb
-          git commit -m "convoy ${LATEST_VERSION}"
-          git push
 
+          updated=false
+          failures=0
+
+          update_cask() {
+            local cask_name="$1"
+            local cask_file="$2"
+            local repo="$3"
+            local dmg_template="$4"
+
+            echo "=== Checking ${cask_name} (${repo}) ==="
+
+            local release_json
+            release_json=$(curl -fsSL \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              "https://api.github.com/repos/${repo}/releases/latest")
+
+            local tag_name
+            tag_name=$(echo "${release_json}" | jq -r '.tag_name')
+            local latest_version="${tag_name#v}"
+
+            if [[ -z "${latest_version}" || "${latest_version}" == "null" ]]; then
+              echo "Failed to determine latest version for ${cask_name}."
+              return 1
+            fi
+
+            local current_version
+            current_version=$(sed -n 's/^  version "\([^"]*\)".*/\1/p' "${cask_file}")
+
+            echo "Current version: ${current_version}"
+            echo "Latest version:  ${latest_version}"
+
+            if [[ "${current_version}" == "${latest_version}" ]]; then
+              echo "${cask_name} is already up to date."
+              return 0
+            fi
+
+            local dmg_name="${dmg_template//\{version\}/${latest_version}}"
+            local dmg_url="https://github.com/${repo}/releases/download/v${latest_version}/${dmg_name}"
+            local tmp_dmg="/tmp/${dmg_name}"
+
+            echo "Downloading ${dmg_url}..."
+            curl -fL "${dmg_url}" -o "${tmp_dmg}"
+            local new_sha256
+            new_sha256=$(sha256sum "${tmp_dmg}" | awk '{print $1}')
+            rm -f "${tmp_dmg}"
+
+            echo "Computed SHA-256: ${new_sha256}"
+
+            sed -i "s/^  version \"[^\"]*\"/  version \"${latest_version}\"/" "${cask_file}"
+            sed -i "s/^  sha256 \"[a-f0-9]*\"/  sha256 \"${new_sha256}\"/" "${cask_file}"
+
+            git add "${cask_file}"
+            git commit -m "${cask_name} ${latest_version}"
+            updated=true
+          }
+
+          update_cask "convoy" "Casks/convoy.rb" "TheDynamicPunk/Convoy" "Convoy-{version}.dmg" || failures=$((failures + 1))
+          update_cask "no-rush" "Casks/no-rush.rb" "amone-labs/no-rush" "no-rush_universal.dmg" || failures=$((failures + 1))
+
+          if [[ "${updated}" == "true" ]]; then
+            git push
+          fi
+
+          if [[ "${failures}" -gt 0 ]]; then
+            exit 1
+          fi
