@@ -1,6 +1,6 @@
 cask "no-rush" do
-  version "0.13.0"
-  sha256 "89304bcbaa583ee0ebf52ea3fdd2310058c7bb5816e6f6d2d22153179d49ba72"
+  version "0.14.1"
+  sha256 "4e390be625379340c85e161e29526d741c0147a46a9c2d210bb446d308d9ae1d"
 
   url "https://github.com/amone-labs/no-rush/releases/download/v#{version}/no-rush_universal.dmg"
   name "No Rush"
