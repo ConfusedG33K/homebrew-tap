@@ -87,6 +87,7 @@ jobs:
 
           update_cask "convoy" "Casks/convoy.rb" "TheDynamicPunk/Convoy" "Convoy-{version}.dmg" || failures=$((failures + 1))
           update_cask "no-rush" "Casks/no-rush.rb" "amone-labs/no-rush" "no-rush_universal.dmg" || failures=$((failures + 1))
+          update_cask "shuffle" "Casks/shuffle.rb" "WizenPainter/shuffle" "Shuffle-{version}.dmg" || failures=$((failures + 1))
 
           if [[ "${updated}" == "true" ]]; then
             git push
